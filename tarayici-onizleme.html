@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Yılan – tarayıcı önizlemesi</title>
+<style>
+  body { margin: 0; background: #050d0a; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: "Segoe UI", system-ui, sans-serif; }
+  #kap { position: relative; width: 960px; height: 720px; }
+  canvas { display: block; }
+  #buton { position: absolute; width: 240px; height: 64px; border: 0; background: rgb(255,196,64); color: rgb(20,36,30);
+           font: bold 21px "Segoe UI", system-ui, sans-serif; cursor: pointer; }
+  #buton:hover { background: rgb(255,216,110); }
+  #not { position: fixed; bottom: 6px; left: 0; right: 0; text-align: center; color: #4c6b5e; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="kap">
+  <canvas id="c" width="960" height="720"></canvas>
+  <button id="buton" style="left:360px; top:470px">BAŞLA</button>
+</div>
+<div id="not">C# Form1.cs çiziminin ve oyun mantığının canvas kopyası (yalnız önizleme için).</div>
+<script>
+// Form1.cs ile aynı sabitler ve mantık
+const Sutun = 30, Satir = 20, Hucre = 30, TahtaX = 30, TahtaY = 100;
+const BaslangicAdimMs = 140, EnHizliAdimMs = 60, AltinSuresi = 6.0;
+const PT = 96 / 72;
+const cv = document.getElementById('c'), g = cv.getContext('2d'), buton = document.getElementById('buton');
+
+const BasRengi = [124, 77, 255], KuyrukRengi = [64, 196, 255];
+const CimenAcik = [52, 136, 88], CimenKoyu = [46, 125, 80], Altin = [255, 196, 64];
+
+let durum = 'Giris';
+let govde = [], oncekiGovde = [], yon = {x: 1, y: 0}, sonIstenenYon = {x: 1, y: 0}, yonKuyrugu = [];
+let elma = {x: 0, y: 0}, altin = {x: 0, y: 0}, altinVar = false, altinKalan = 0;
+let skor = 0, rekor = 0, yenen = 0, yeniRekor = false;
+let adimMs = BaslangicAdimMs, birikim = 0, sonZaman = performance.now() / 1000, toplamZaman = 0, olumSarsinti = 0;
+let parcaciklar = [], yazilar = [];
+try { rekor = parseInt(localStorage.getItem('yilan-rekor') || '0', 10) || 0; } catch (e) {}
+
+const rgba = (c, a = 255) => `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a / 255})`;
+const karistir = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const acik = (c, t) => karistir(c, [255, 255, 255], t);
+const esit = (a, b) => a.x === b.x && a.y === b.y;
+const merkez = h => ({x: TahtaX + h.x * Hucre + Hucre / 2, y: TahtaY + h.y * Hucre + Hucre / 2});
+const font = (pt, kalin = true) => `${kalin ? 'bold ' : ''}${pt * PT}px "Segoe UI", system-ui, sans-serif`;
+const seviye = () => 1 + Math.floor(Math.min(yenen, 27) / 3);
+
+function oyunuBaslat() {
+  govde = [];
+  for (let i = 0; i < 4; i++) govde.push({x: 8 - i, y: Satir / 2});
+  oncekiGovde = govde.map(p => ({...p}));
+  yon = {x: 1, y: 0}; sonIstenenYon = yon; yonKuyrugu = [];
+  skor = 0; yenen = 0; yeniRekor = false; adimMs = BaslangicAdimMs; birikim = 0; altinVar = false;
+  parcaciklar = []; yazilar = [];
+  durum = 'Oynuyor';
+  elma = bosHucre();
+  buton.style.display = 'none';
+}
+
+function bosHucre() {
+  while (true) {
+    const p = {x: Math.floor(Math.random() * Sutun), y: Math.floor(Math.random() * Satir)};
+    if (govde.some(s => esit(s, p))) continue;
+    if (esit(p, elma) && durum === 'Oynuyor') continue;
+    if (altinVar && esit(p, altin)) continue;
+    return p;
+  }
+}
+
+function yonEkle(y) {
+  if (y.x === -sonIstenenYon.x && y.y === -sonIstenenYon.y) return;
+  if (esit(y, sonIstenenYon)) return;
+  if (yonKuyrugu.length >= 3) return;
+  yonKuyrugu.push(y); sonIstenenYon = y;
+}
+
+function adim() {
+  if (yonKuyrugu.length > 0) yon = yonKuyrugu.shift();
+  const bas = govde[0], yeni = {x: bas.x + yon.x, y: bas.y + yon.y};
+  if (yeni.x < 0 || yeni.y < 0 || yeni.x >= Sutun || yeni.y >= Satir) { ol(); return; }
+  const elmaYedi = esit(yeni, elma), altinYedi = altinVar && esit(yeni, altin), buyur = elmaYedi || altinYedi;
+  const kontrol = buyur ? govde.length : govde.length - 1;
+  for (let i = 0; i < kontrol; i++) if (esit(govde[i], yeni)) { ol(); return; }
+  oncekiGovde = govde.map(p => ({...p}));
+  govde.unshift(yeni);
+  if (buyur) oncekiGovde.push({...oncekiGovde[oncekiGovde.length - 1]}); else govde.pop();
+  const m = merkez(yeni);
+  if (elmaYedi) {
+    skor += 1; yenen++;
+    patlat(m, [255, 82, 82], 14); yaziEkle(m, '+1', [255, 255, 255]);
+    elma = bosHucre();
+    adimMs = Math.max(EnHizliAdimMs, BaslangicAdimMs - yenen * 3);
+    if (!altinVar && yenen >= 3 && Math.floor(Math.random() * 5) === 0) { altin = bosHucre(); altinVar = true; altinKalan = AltinSuresi; }
+  }
+  if (altinYedi) { skor += 5; altinVar = false; patlat(m, Altin, 26); yaziEkle(m, '+5', Altin); }
+}
+
+function ol() {
+  durum = 'Bitti'; birikim = adimMs; olumSarsinti = 0.35;
+  patlat(merkez(govde[0]), BasRengi, 30);
+  if (skor > rekor) { rekor = skor; yeniRekor = true; try { localStorage.setItem('yilan-rekor', rekor); } catch (e) {} }
+  buton.textContent = 'TEKRAR OYNA'; buton.style.top = '520px'; buton.style.display = 'block'; buton.focus();
+}
+
+function patlat(c, renk, adet) {
+  for (let i = 0; i < adet; i++) {
+    const aci = Math.random() * Math.PI * 2, hiz = 60 + Math.random() * 140, omur = 0.5 + Math.random() * 0.4;
+    parcaciklar.push({x: c.x, y: c.y, vx: Math.cos(aci) * hiz, vy: Math.sin(aci) * hiz - 40, omur, maxOmur: omur, boy: 3 + Math.random() * 4, renk});
+  }
+}
+function yaziEkle(c, metin, renk) { yazilar.push({x: c.x, y: c.y - 10, omur: 1, metin, renk}); }
+
+buton.addEventListener('click', oyunuBaslat);
+window.addEventListener('blur', () => { if (durum === 'Oynuyor') durum = 'Duraklatildi'; });
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  const duraklat = k === 'p' || k === ' ' || k === 'escape';
+  let islendi = true;
+  if (durum === 'Oynuyor') {
+    if (k === 'arrowup' || k === 'w') yonEkle({x: 0, y: -1});
+    else if (k === 'arrowdown' || k === 's') yonEkle({x: 0, y: 1});
+    else if (k === 'arrowleft' || k === 'a') yonEkle({x: -1, y: 0});
+    else if (k === 'arrowright' || k === 'd') yonEkle({x: 1, y: 0});
+    else if (duraklat) durum = 'Duraklatildi';
+    else islendi = false;
+  } else if (durum === 'Duraklatildi') {
+    if (duraklat || k === 'enter') durum = 'Oynuyor'; else islendi = false;
+  } else if (k === 'enter' || k === ' ') oyunuBaslat();
+  else islendi = false;
+  if (islendi) e.preventDefault();
+});
+
+// ---------------- çizim ----------------
+function yuvarlakDikdortgen(x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function ortaliYaz(metin, f, renk, x, y) { g.font = f; g.fillStyle = renk; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(metin, x, y); }
+function yaz(metin, f, renk, x, y) { g.font = f; g.fillStyle = renk; g.textAlign = 'left'; g.textBaseline = 'top'; g.fillText(metin, x, y + 3); }
+function cizgi(a, b, renk, w) { g.strokeStyle = renk; g.lineWidth = w; g.lineCap = 'round'; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); }
+function daire(x, y, r, renk) { g.fillStyle = renk; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
+
+function arkaPlan() {
+  const lg = g.createLinearGradient(0, 0, 0, 720); lg.addColorStop(0, rgba([16, 38, 30])); lg.addColorStop(1, rgba([6, 16, 13]));
+  g.fillStyle = lg; g.fillRect(0, 0, 960, 720);
+  const b = 'rgba(120,255,170,0.055)';
+  daire(50, 630, 130, b); daire(930, 50, 110, b); daire(790, 690, 90, b);
+}
+
+function ustBar() {
+  yuvarlakDikdortgen(30, 16, 900, 68, 16); g.fillStyle = 'rgba(0,0,0,0.59)'; g.fill();
+  g.strokeStyle = 'rgba(120,255,170,0.2)'; g.lineWidth = 1.5; g.stroke();
+  const logo = [];
+  for (let i = 0; i < 8; i++) logo.push({x: 52 + i * 5, y: 50 + Math.sin(i * 0.9 + toplamZaman * 3) * 5});
+  g.strokeStyle = rgba(KuyrukRengi); g.lineWidth = 7; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath(); logo.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke();
+  daire(logo[7].x, logo[7].y, 6, rgba(BasRengi));
+  yaz('YILAN', font(22), '#fff', 100, 30);
+  istatistik(300, 'SKOR', String(skor), '#fff');
+  istatistik(450, 'UZUNLUK', String(durum === 'Giris' ? 0 : govde.length), '#fff');
+  istatistik(600, 'REKOR', String(rekor), rgba(Altin));
+  istatistik(750, 'HIZ', durum === 'Giris' ? '-' : String(seviye()), rgba(KuyrukRengi));
+  yaz('P: Duraklat', font(9), 'rgba(255,255,255,0.55)', 838, 43);
+}
+function istatistik(x, etiket, deger, renk) { yaz(etiket, font(9), 'rgba(200,230,215,0.59)', x, 25); yaz(deger, font(18), renk, x - 3, 41); }
+
+function tahta() {
+  const w = Sutun * Hucre, h = Satir * Hucre;
+  yuvarlakDikdortgen(TahtaX + 4, TahtaY + 8, w, h, 14); g.fillStyle = 'rgba(0,0,0,0.43)'; g.fill();
+  g.save(); yuvarlakDikdortgen(TahtaX, TahtaY, w, h, 14); g.clip();
+  g.fillStyle = rgba(CimenKoyu); g.fillRect(TahtaX, TahtaY, w, h);
+  g.fillStyle = rgba(CimenAcik);
+  for (let y = 0; y < Satir; y++) for (let x = 0; x < Sutun; x++) if ((x + y) % 2 === 0) g.fillRect(TahtaX + x * Hucre, TahtaY + y * Hucre, Hucre, Hucre);
+  const rg = g.createRadialGradient(480, 400, 200, 480, 400, 560); rg.addColorStop(0, 'rgba(0,20,10,0)'); rg.addColorStop(1, 'rgba(0,20,10,0.27)');
+  g.fillStyle = rg; g.fillRect(TahtaX, TahtaY, w, h);
+  g.restore();
+  yuvarlakDikdortgen(TahtaX, TahtaY, w, h, 14); g.strokeStyle = 'rgba(140,255,190,0.47)'; g.lineWidth = 2; g.stroke();
+}
+
+function elmaCiz(c) {
+  const s = 1 + 0.07 * Math.sin(toplamZaman * 6), r = 10.5 * s;
+  daire(c.x + 2, c.y + 4, r, 'rgba(0,0,0,0.24)');
+  const lg = g.createLinearGradient(c.x - r, c.y - r, c.x + r * 0.6, c.y + r * 1.4);
+  lg.addColorStop(0, 'rgb(255,96,86)'); lg.addColorStop(1, 'rgb(196,24,40)');
+  daire(c.x, c.y + 1, r, lg);
+  g.fillStyle = 'rgba(255,255,255,0.59)'; g.beginPath(); g.ellipse(c.x - r * 0.55 + r * 0.275, c.y - r * 0.5 + r * 0.2, r * 0.275, r * 0.2, 0, 0, Math.PI * 2); g.fill();
+  cizgi({x: c.x, y: c.y - r + 2}, {x: c.x + 1.5, y: c.y - r - 4}, 'rgb(110,70,35)', 2.2);
+  const lx = c.x + 2, ly = c.y - r - 2;
+  g.fillStyle = 'rgb(120,210,90)'; g.beginPath(); g.moveTo(lx, ly);
+  g.bezierCurveTo(lx + 3, ly - 6, lx + 9, ly - 6, lx + 11, ly - 4); g.bezierCurveTo(lx + 8, ly + 1, lx + 3, ly + 2, lx, ly); g.fill();
+}
+
+function altinCiz(c) {
+  const n = 1 + 0.12 * Math.sin(toplamZaman * 8);
+  if (altinKalan < 2 && Math.sin(toplamZaman * 25) < 0) return;
+  daire(c.x, c.y, 20 * n, 'rgba(255,220,100,0.24)');
+  g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = toplamZaman * 1.5 + i * Math.PI / 5 - Math.PI / 2, rr = (i % 2 === 0 ? 13 : 6) * n;
+    const x = c.x + Math.cos(a) * rr, y = c.y + Math.sin(a) * rr; i ? g.lineTo(x, y) : g.moveTo(x, y);
+  }
+  g.closePath(); g.fillStyle = rgba(Altin); g.fill(); g.strokeStyle = 'rgb(255,248,210)'; g.lineWidth = 1.5; g.stroke();
+  g.strokeStyle = 'rgba(255,236,160,0.78)'; g.lineWidth = 2.5; g.lineCap = 'round';
+  g.beginPath(); g.arc(c.x, c.y, 17, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (altinKalan / AltinSuresi)); g.stroke();
+}
+
+function yilanCiz() {
+  const n = govde.length, t = Math.min(1, birikim / adimMs), p = [];
+  for (let i = 0; i < n; i++) { const a = merkez(oncekiGovde[i]), b = merkez(govde[i]); p.push({x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t}); }
+  for (let i = n - 1; i >= 1; i--) { const k = i / (n - 1); cizgi({x: p[i].x + 3, y: p[i].y + 5}, {x: p[i - 1].x + 3, y: p[i - 1].y + 5}, 'rgba(0,0,0,0.22)', 24 - 8 * k); }
+  for (let i = n - 1; i >= 1; i--) { const k = i / (n - 1); cizgi(p[i], p[i - 1], rgba(karistir(BasRengi, KuyrukRengi, k)), 24 - 8 * k); }
+  for (let i = n - 1; i >= 1; i--) { const k = i / (n - 1); cizgi(p[i], p[i - 1], rgba(acik(karistir(BasRengi, KuyrukRengi, k), 0.6), 110), (24 - 8 * k) * 0.3); }
+  for (let i = 2; i < n; i += 2) { const k = i / (n - 1); daire(p[i].x, p[i].y, 3.2 - 1.2 * k, 'rgba(20,10,60,0.27)'); }
+
+  const d = {x: govde[0].x - govde[1].x, y: govde[0].y - govde[1].y}, h = p[0], dik = {x: -d.y, y: d.x};
+  if (durum === 'Oynuyor' && (toplamZaman % 1.4) < 0.28) {
+    const u1 = {x: h.x + d.x * 13, y: h.y + d.y * 13}, u2 = {x: h.x + d.x * 22, y: h.y + d.y * 22}, kr = 'rgb(255,70,100)';
+    cizgi(u1, u2, kr, 2.2);
+    cizgi(u2, {x: u2.x + d.x * 4 + dik.x * 3, y: u2.y + d.y * 4 + dik.y * 3}, kr, 2.2);
+    cizgi(u2, {x: u2.x + d.x * 4 - dik.x * 3, y: u2.y + d.y * 4 - dik.y * 3}, kr, 2.2);
+  }
+  const lg = g.createLinearGradient(h.x - 15, h.y - 15, h.x + 15, h.y + 15);
+  lg.addColorStop(0, rgba(acik(BasRengi, 0.25))); lg.addColorStop(1, rgba(karistir(BasRengi, [0, 0, 0], 0.15)));
+  daire(h.x, h.y, 15, lg);
+  for (const s of [-1, 1]) {
+    const gx = h.x + d.x * 4 + dik.x * 7 * s, gy = h.y + d.y * 4 + dik.y * 7 * s;
+    if (durum === 'Bitti') { cizgi({x: gx - 3.5, y: gy - 3.5}, {x: gx + 3.5, y: gy + 3.5}, '#fff', 2.2); cizgi({x: gx - 3.5, y: gy + 3.5}, {x: gx + 3.5, y: gy - 3.5}, '#fff', 2.2); continue; }
+    daire(gx, gy, 5, '#fff'); daire(gx + d.x * 1.6, gy + d.y * 1.6, 2.6, 'rgb(20,16,40)');
+  }
+}
+
+function efektler() {
+  for (const p of parcaciklar) daire(p.x, p.y, p.boy / 2, rgba(p.renk, 255 * Math.max(0, p.omur / p.maxOmur)));
+  for (const y of yazilar) ortaliYaz(y.metin, font(14), rgba(y.renk, 255 * Math.max(0, Math.min(1, y.omur * 1.5))), y.x, y.y);
+}
+
+function perde(op) { yuvarlakDikdortgen(TahtaX, TahtaY, Sutun * Hucre, Satir * Hucre, 14); g.fillStyle = `rgba(6,18,14,${op / 255})`; g.fill(); }
+
+function giris() {
+  perde(120);
+  const cx = TahtaX + Sutun * Hucre / 2, adet = 26, p = [];
+  for (let i = 0; i < adet; i++) p.push({x: cx - 190 + i * 15, y: 205 + Math.sin(i * 0.45 - toplamZaman * 4) * 20});
+  for (let i = 0; i < adet - 1; i++) { const k = 1 - i / (adet - 1); cizgi(p[i], p[i + 1], rgba(karistir(BasRengi, KuyrukRengi, k)), 14 + 10 * (1 - k)); }
+  const bas = p[adet - 1];
+  daire(bas.x, bas.y, 15, rgba(BasRengi));
+  daire(bas.x + 4.5, bas.y - 6.5, 4.5, '#fff'); daire(bas.x + 4.5, bas.y + 6.5, 4.5, '#fff');
+  daire(bas.x + 6.25, bas.y - 6.75, 2.25, 'rgb(20,16,40)'); daire(bas.x + 6.25, bas.y + 6.25, 2.25, 'rgb(20,16,40)');
+  elmaCiz({x: bas.x + 55, y: bas.y});
+  ortaliYaz('YILAN', font(54), '#fff', cx, 305);
+  ortaliYaz('Elmaları topla, uza; duvara ve kendine çarpma!', font(15), 'rgba(230,255,240,0.86)', cx, 375);
+  ortaliYaz('Yön tuşları / WASD ile yönet  •  P ile duraklat  •  Altın yıldız +5 puan', font(11, false), 'rgba(220,240,230,0.67)', cx, 415);
+  if (rekor > 0) ortaliYaz('Rekorun: ' + rekor, font(11, false), rgba(Altin), cx, 445);
+  ortaliYaz('Enter ile de başlayabilirsin', font(11, false), 'rgba(220,240,230,0.51)', cx, 560);
+}
+
+function duraklatildi() {
+  perde(150);
+  const cx = TahtaX + Sutun * Hucre / 2, cy = TahtaY + Satir * Hucre / 2;
+  g.fillStyle = '#fff'; g.fillRect(cx - 22, cy - 90, 14, 46); g.fillRect(cx + 8, cy - 90, 14, 46);
+  ortaliYaz('DURAKLATILDI', font(34), '#fff', cx, cy);
+  ortaliYaz('Devam etmek için P, Boşluk ya da Enter', font(11, false), 'rgba(220,240,230,0.75)', cx, cy + 50);
+}
+
+function bitti() {
+  perde(165);
+  const cx = TahtaX + Sutun * Hucre / 2;
+  ortaliYaz('OYUN BİTTİ', font(54), 'rgb(255,110,110)', cx, 220);
+  const kx = cx - 220, ky = 280;
+  yuvarlakDikdortgen(kx, ky, 440, 200, 18); g.fillStyle = 'rgba(0,0,0,0.47)'; g.fill(); g.strokeStyle = 'rgba(140,255,190,0.27)'; g.lineWidth = 1.5; g.stroke();
+  const satir = (i, e, d, r) => {
+    const y = ky + 24 + i * 46;
+    yaz(e, font(15), 'rgba(220,240,230,0.75)', kx + 40, y);
+    g.font = font(18); g.fillStyle = r; g.textAlign = 'right'; g.textBaseline = 'top'; g.fillText(d, kx + 440 - 40, y);
+  };
+  satir(0, 'Skor', String(skor), '#fff'); satir(1, 'Uzunluk', String(govde.length), rgba(KuyrukRengi)); satir(2, 'Rekor', String(rekor), rgba(Altin));
+  if (yeniRekor) {
+    const s = 1 + 0.06 * Math.sin(toplamZaman * 7);
+    g.save(); g.translate(cx, 460); g.scale(s, s); ortaliYaz('★ YENİ REKOR! ★', font(15), rgba(Altin), 0, 0); g.restore();
+  }
+}
+
+function kare() {
+  const simdi = performance.now() / 1000, dt = Math.min(0.1, simdi - sonZaman);
+  sonZaman = simdi; toplamZaman += dt;
+  if (durum === 'Oynuyor') {
+    birikim += dt * 1000;
+    while (birikim >= adimMs && durum === 'Oynuyor') { birikim -= adimMs; adim(); }
+    if (altinVar) { altinKalan -= dt; if (altinKalan <= 0) altinVar = false; }
+  }
+  for (let i = parcaciklar.length - 1; i >= 0; i--) { const p = parcaciklar[i]; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 180 * dt; p.omur -= dt; if (p.omur <= 0) parcaciklar.splice(i, 1); }
+  for (let i = yazilar.length - 1; i >= 0; i--) { yazilar[i].y -= 45 * dt; yazilar[i].omur -= dt; if (yazilar[i].omur <= 0) yazilar.splice(i, 1); }
+  if (olumSarsinti > 0) olumSarsinti -= dt;
+
+  arkaPlan(); ustBar();
+  g.save();
+  if (olumSarsinti > 0) { const s = olumSarsinti * 20; g.translate((Math.random() - 0.5) * s, (Math.random() - 0.5) * s); }
+  tahta();
+  if (durum !== 'Giris') { elmaCiz(merkez(elma)); if (altinVar) altinCiz(merkez(altin)); yilanCiz(); }
+  efektler();
+  g.restore();
+  if (durum === 'Giris') giris(); else if (durum === 'Duraklatildi') duraklatildi(); else if (durum === 'Bitti') bitti();
+  requestAnimationFrame(kare);
+}
+requestAnimationFrame(kare);
+</script>
+</body>
+</html>
