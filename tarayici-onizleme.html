@@ -6,6 +6,7 @@
 <style>
   body { margin: 0; background: #050d0a; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: "Segoe UI", system-ui, sans-serif; }
   #kap { position: relative; width: 960px; height: 720px; }
+  #ic { position: absolute; left: 0; top: 0; width: 960px; height: 720px; transform-origin: 0 0; }
   canvas { display: block; }
   #buton { position: absolute; width: 240px; height: 64px; border: 0; background: rgb(255,196,64); color: rgb(20,36,30);
            font: bold 21px "Segoe UI", system-ui, sans-serif; cursor: pointer; }
@@ -14,16 +15,24 @@
 </style>
 </head>
 <body>
-<div id="kap">
+<div id="kap"><div id="ic">
   <canvas id="c" width="960" height="720"></canvas>
   <button id="buton" style="left:360px; top:470px">BAŞLA</button>
-</div>
+</div></div>
 <div id="not">C# Form1.cs çiziminin ve oyun mantığının canvas kopyası (yalnız önizleme için).</div>
 <script>
 // Form1.cs ile aynı sabitler ve mantık
 const Sutun = 30, Satir = 20, Hucre = 30, TahtaX = 30, TahtaY = 100;
 const BaslangicAdimMs = 140, EnHizliAdimMs = 60, AltinSuresi = 6.0;
 const PT = 96 / 72;
+// Oyun alanı pencereye sığmazsa orantılı küçült (yoksa kenarlar ekran dışında kalır).
+function sigdir() {
+  const o = Math.min(1, innerWidth / 960, (innerHeight - 24) / 720);
+  const kap = document.getElementById('kap');
+  kap.style.width = 960 * o + 'px'; kap.style.height = 720 * o + 'px';
+  document.getElementById('ic').style.transform = `scale(${o})`;
+}
+addEventListener('resize', sigdir); sigdir();
 const cv = document.getElementById('c'), g = cv.getContext('2d'), buton = document.getElementById('buton');
 
 const BasRengi = [124, 77, 255], KuyrukRengi = [64, 196, 255];

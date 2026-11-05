@@ -40,6 +40,7 @@ namespace YilanOyunu
         Stopwatch saat = new Stopwatch();
         double sonZaman, toplamZaman, olumSarsinti;
         Random rnd = new Random();
+        float olcek = 1f;   // ekran küçükse tüm çizim bu oranla küçülür
         string rekorDosyasi = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rekor.txt");
 
         // ---- Efektler ----
@@ -74,9 +75,31 @@ namespace YilanOyunu
         private void Form1_Load(object sender, EventArgs e)
         {
             RekoruOku();
+            EkranaSigdir();
             Deactivate += delegate { if (durum == Durum.Oynuyor) durum = Durum.Duraklatildi; };
             saat.Start();
             timer1.Start();
+        }
+
+        // Pencere ekrana sığmazsa (küçük ekran ya da %125-%150 ölçek) oyun alanını orantılı küçült;
+        // yoksa tahtanın alt kısmı ekran dışında kalır ve oradaki elma görünmez.
+        void EkranaSigdir()
+        {
+            Rectangle alan = Screen.FromControl(this).WorkingArea;
+            int kenarW = Width - ClientSize.Width, kenarH = Height - ClientSize.Height;
+            olcek = Math.Min(1f, Math.Min((alan.Width - kenarW) / 960f, (alan.Height - kenarH) / 720f));
+            if (olcek >= 1f) { olcek = 1f; return; }
+
+            ClientSize = new Size((int)(960 * olcek), (int)(720 * olcek));
+            button1.Font = new Font("Segoe UI", 16F * olcek, FontStyle.Bold);
+            button1.Size = new Size((int)(240 * olcek), (int)(64 * olcek));
+            ButonuYerlestir(470);
+            CenterToScreen();
+        }
+
+        void ButonuYerlestir(int y)
+        {
+            button1.Location = new Point((int)(360 * olcek), (int)(y * olcek));
         }
 
         private void button1_Click(object sender, EventArgs e)
@@ -190,7 +213,7 @@ namespace YilanOyunu
                 RekoruYaz();
             }
             button1.Text = "TEKRAR OYNA";
-            button1.Location = new Point(360, 520);
+            ButonuYerlestir(520);
             button1.Visible = true;
             button1.Focus();
         }
@@ -354,6 +377,7 @@ namespace YilanOyunu
             Graphics g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            g.ScaleTransform(olcek, olcek);
 
             ArkaPlanCiz(g);
             UstBarCiz(g);
@@ -381,9 +405,10 @@ namespace YilanOyunu
 
         void ArkaPlanCiz(Graphics g)
         {
-            using (LinearGradientBrush b = new LinearGradientBrush(ClientRectangle,
+            Rectangle tum = new Rectangle(0, 0, 960, 720);
+            using (LinearGradientBrush b = new LinearGradientBrush(tum,
                 Color.FromArgb(16, 38, 30), Color.FromArgb(6, 16, 13), 90f))
-                g.FillRectangle(b, ClientRectangle);
+                g.FillRectangle(b, tum);
 
             // Hafif yaprak benekleri
             using (SolidBrush b = new SolidBrush(Color.FromArgb(14, 120, 255, 170)))
